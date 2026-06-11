@@ -1,0 +1,98 @@
+/* Container for parsed markdown, matching X.com's aesthetic */
+.x-md-container {
+    /* Inherit base properties from original text container */
+    color: inherit;
+    font-family: inherit;
+    line-height: inherit;
+    font-size: inherit;
+    white-space: normal !important; /* Override X.com's pre-wrap so Marked's HTML formatting \n don't break layout */
+    word-break: break-word;
+}
+
+/* Margin handling for paragraphs */
+.x-md-container p {
+    margin: 0;
+}
+.x-md-container p:not(:last-child) {
+    margin-bottom: 0.5em; /* Only add spacing between multiple paragraphs */
+}
+.x-md-container p:last-child {
+    margin-bottom: 0;
+}
+
+/* Headers */
+.x-md-container h1, .x-md-container h2, .x-md-container h3,
+.x-md-container h4, .x-md-container h5, .x-md-container h6 {
+    margin: 0.5em 0;
+    font-weight: 700;
+}
+.x-md-container h1 { font-size: 1.5em; }
+.x-md-container h2 { font-size: 1.3em; }
+.x-md-container h3 { font-size: 1.1em; }
+.x-md-container h4 { font-size: 1em; }
+
+/* Inline Code */
+.x-md-container code {
+    background-color: rgba(128, 128, 128, 0.15);
+    padding: 0.1em 0.3em;
+    border-radius: 4px;
+    font-family: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, "Liberation Mono", monospace;
+    font-size: 0.9em;
+}
+
+/* Code Blocks */
+.x-md-container pre {
+    background-color: rgba(128, 128, 128, 0.1);
+    border: 1px solid rgba(128, 128, 128, 0.2);
+    border-radius: 12px;
+    padding: 12px;
+    overflow-x: auto;
+    margin: 0.5em 0;
+}
+.x-md-container pre code {
+    background-color: transparent;
+    padding: 0;
+    border-radius: 0;
+    font-size: 0.9em;
+}
+
+/* Blockquotes */
+.x-md-container blockquote {
+    margin: 0.5em 0;
+    padding: 0 1em;
+    color: rgb(113, 118, 123); /* X.com secondary text color, works well on dark and light */
+    border-left: 3px solid rgba(128, 128, 128, 0.4);
+}
+
+/* Lists */
+.x-md-container ul, .x-md-container ol {
+    margin: 0.5em 0;
+    padding-left: 1.5em;
+}
+.x-md-container li {
+    margin-bottom: 0.2em;
+}
+
+/* Tables */
+.x-md-container table {
+    border-collapse: collapse;
+    width: 100%;
+    margin: 0.5em 0;
+}
+.x-md-container th, .x-md-container td {
+    border: 1px solid rgba(128, 128, 128, 0.2);
+    padding: 6px 12px;
+    text-align: left;
+}
+.x-md-container th {
+    background-color: rgba(128, 128, 128, 0.05);
+}
+
+/* X.com's links and native elements */
+.x-md-container a {
+    text-decoration: none;
+    color: inherit; 
+}
+.x-md-container a:hover {
+    text-decoration: underline;
+}
