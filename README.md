@@ -25,7 +25,7 @@
 
 1. 从本仓库的 [Releases](#) 页面下载最新版本的 `Marked-X-Down.zip`。
 2. 解压缩到一个您喜欢的永久文件夹中。
-3. 打开 Edge / Chrome 浏览器，访问 `edge://extensions/` (或 `chrome://extensions/`)。
+3. 打开 Edge 浏览器，访问 `edge://extensions/`。
 4. 开启右上角/左下角的 **“开发人员模式” (Developer mode)**。
 5. 点击 **“加载解压缩的扩展” (Load unpacked)**，然后选择您解压出来的文件夹。
 6. 刷新 X.com，享受 Markdown 和 LaTeX 的魔力吧！
