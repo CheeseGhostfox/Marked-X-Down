@@ -1,11 +1,91 @@
 // content.js
 
+// ==================== 新增：禁用/启用控制 ====================
+let enabled = true;                 // 当前页面解析是否启用
+let observer = null;               // MutationObserver 实例
+let isReversionRunning = false;    // 防止 revertAll 递归调用
+
+// 恢复所有已解析的内容，还原原始 tweet
+function revertAll() {
+  if (isReversionRunning) return;
+  isReversionRunning = true;
+
+  // 查找所有被我们替换的 tweet
+  const containers = document.querySelectorAll('.x-md-container');
+  containers.forEach(container => {
+    // 找到原始 tweet 节点（隐藏的那个）
+    const originalTweet = container.previousElementSibling;
+    if (originalTweet && originalTweet.getAttribute && originalTweet.getAttribute('data-testid') === 'tweetText') {
+      // 恢复显示原始节点
+      originalTweet.style.display = '';
+      // 移除我们添加的容器
+      container.remove();
+      // 清除已处理标记，以便重新启用时可以重新解析
+      delete originalTweet.dataset.markdownProcessed;
+    }
+  });
+
+  isReversionRunning = false;
+}
+
+// 重新解析当前页面所有未处理的 tweet（当启用时）
+function reparseAll() {
+  if (!enabled) return;
+  document.querySelectorAll('[data-testid="tweetText"]').forEach(tweetNode => {
+    // 如果 tweet 节点没有被处理过（没有标记，且没有相邻的 .x-md-container）
+    const nextSibling = tweetNode.nextElementSibling;
+    const alreadyProcessed = tweetNode.dataset.markdownProcessed === 'true' ||
+                             (nextSibling && nextSibling.classList && nextSibling.classList.contains('x-md-container'));
+    if (!alreadyProcessed) {
+      processTweet(tweetNode);
+    }
+  });
+}
+
+// 初始化状态：向 background 查询当前标签页的禁用设置
+async function initState() {
+  try {
+    const response = await chrome.runtime.sendMessage({ type: 'getInitialState' });
+    const disabled = response.disabled;
+    enabled = !disabled;
+    if (!enabled) {
+      // 如果初始状态是禁用，则立即恢复所有已解析的内容
+      revertAll();
+    } else {
+      // 确保启用状态下重新解析可能遗漏的 tweet
+      reparseAll();
+    }
+  } catch (err) {
+    console.error('Failed to get initial state:', err);
+  }
+}
+
+// 监听来自 background 的切换消息
+chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
+  if (request.action === 'disable') {
+    if (enabled) {
+      enabled = false;
+      revertAll();
+    }
+    sendResponse({ status: 'disabled' });
+  } else if (request.action === 'enable') {
+    if (!enabled) {
+      enabled = true;
+      reparseAll();
+    }
+    sendResponse({ status: 'enabled' });
+  }
+  return true;
+});
+
+// ==================== 原有函数（稍作调整） ====================
+
 // Set marked.js options
 if (typeof marked !== 'undefined') {
     marked.setOptions({
         gfm: true,
-        breaks: true, // X.com uses soft breaks as real newlines
-        sanitize: false // allow HTML tags
+        breaks: true,
+        sanitize: false
     });
 }
 
@@ -23,25 +103,17 @@ function renderMath(text, clonesMap) {
     for (const delim of delimiters) {
         let startIndex = 0;
         while ((startIndex = res.indexOf(delim.left, startIndex)) !== -1) {
-            // Check if escaped
             if (startIndex > 0 && res[startIndex - 1] === '\\') {
                 startIndex += delim.left.length;
                 continue;
             }
-            
             const endIndex = res.indexOf(delim.right, startIndex + delim.left.length);
-            if (endIndex === -1) {
-                break; // No closing delimiter found
-            }
-            
-            // Check if closing is escaped
+            if (endIndex === -1) break;
             if (res[endIndex - 1] === '\\') {
                 startIndex = endIndex + delim.right.length;
                 continue;
             }
-
             const mathStr = res.substring(startIndex + delim.left.length, endIndex);
-            
             try {
                 const html = katex.renderToString(mathStr, {
                     displayMode: delim.display,
@@ -49,7 +121,6 @@ function renderMath(text, clonesMap) {
                 });
                 const id = `XMDTOKEN${Math.random().toString(36).substr(2, 9)}X${clonesMap.size}X`;
                 clonesMap.set(id, html);
-                
                 res = res.substring(0, startIndex) + id + res.substring(endIndex + delim.right.length);
                 startIndex += id.length;
             } catch (e) {
@@ -57,22 +128,18 @@ function renderMath(text, clonesMap) {
             }
         }
     }
-    
-    // Unescape \$ and \\( etc
     res = res.replace(/\\(\$|\\\[|\\\]|\\\(|\\\))/g, '$1');
     return res;
 }
 
 function processTweet(tweetNode) {
+    // 新增：如果全局禁用，则不处理
+    if (!enabled) return;
     if (tweetNode.dataset.markdownProcessed === "true") return;
 
-    // Mark as processed early to avoid loops
     tweetNode.dataset.markdownProcessed = "true";
 
-    // Check if we should activate LaTeX pipeline early so we can adjust extraction
     const isLatexed = /#latexed/i.test(tweetNode.textContent);
-
-    // 1. Extract text and tokens by flattening the DOM tree
     let text = "";
     const clonesMap = new Map();
 
@@ -82,7 +149,6 @@ function processTweet(tweetNode) {
                 text += child.nodeValue;
             } else if (child.nodeType === Node.ELEMENT_NODE) {
                 if (child.tagName === 'A') {
-                    // X.com converts $E into cashtags. We must flatten cashtags if in LaTeX mode!
                     if (isLatexed && child.textContent.trim().startsWith('$')) {
                         walk(child);
                         continue;
@@ -90,8 +156,8 @@ function processTweet(tweetNode) {
                     const id = `XMDTOKEN${Math.random().toString(36).substr(2, 9)}X${clonesMap.size}X`;
                     clonesMap.set(id, child.outerHTML);
                     text += id;
-                } else if (child.tagName === 'IMG' || 
-                           child.getAttribute('role') === 'button' || 
+                } else if (child.tagName === 'IMG' ||
+                           child.getAttribute('role') === 'button' ||
                            child.hasAttribute('tabindex')) {
                     const id = `XMDTOKEN${Math.random().toString(36).substr(2, 9)}X${clonesMap.size}X`;
                     clonesMap.set(id, child.outerHTML);
@@ -99,7 +165,6 @@ function processTweet(tweetNode) {
                 } else if (child.tagName === 'BR') {
                     text += "\n";
                 } else {
-                    // Recurse into SPAN, DIV wrappers to extract raw text
                     walk(child);
                 }
             }
@@ -107,14 +172,12 @@ function processTweet(tweetNode) {
     }
 
     walk(tweetNode);
-
     if (!text.trim()) return;
 
     if (isLatexed) {
         text = renderMath(text, clonesMap);
     }
 
-    // 2. Parse with marked
     let parsedHtml = "";
     try {
         parsedHtml = marked.parse(text);
@@ -123,46 +186,35 @@ function processTweet(tweetNode) {
         return;
     }
 
-    // 3. Replace tokens back with original HTML
     for (const [token, html] of clonesMap.entries()) {
         parsedHtml = parsedHtml.split(token).join(html);
     }
 
-    // 4. Create new container
     const markdownContainer = document.createElement('div');
     markdownContainer.className = 'x-md-container';
-    markdownContainer.setAttribute('dir', 'auto'); // Fix text order for LTR/RTL mixed text and emojis
-    
-    // Copy the original classes to inherit the exact font sizing and weights
+    markdownContainer.setAttribute('dir', 'auto');
     if (tweetNode.className) {
         markdownContainer.className += ' ' + tweetNode.className;
     }
-    
-    // Explicitly copy color to support Dark Mode / Dim Mode properly
     const computedStyle = window.getComputedStyle(tweetNode);
     if (computedStyle && computedStyle.color) {
         markdownContainer.style.color = computedStyle.color;
     }
-    
     markdownContainer.innerHTML = parsedHtml;
-    
-    // 5. Hide original and insert new
+
     tweetNode.style.display = 'none';
     tweetNode.parentNode.insertBefore(markdownContainer, tweetNode.nextSibling);
 
-    // 6. Delegate events to preserve SPA routing
     markdownContainer.addEventListener('click', (e) => {
         const a = e.target.closest('a');
         if (a) {
             e.preventDefault();
             e.stopPropagation();
-
             const href = a.getAttribute('href');
             let originalA = null;
             if (href) {
                 originalA = tweetNode.querySelector(`a[href="${href}"]`);
             }
-            
             if (originalA) {
                 originalA.click();
             } else {
@@ -172,8 +224,9 @@ function processTweet(tweetNode) {
     });
 }
 
-// Observe DOM mutations to catch new tweets loading
-const observer = new MutationObserver((mutations) => {
+// 修改 observer 回调，检查 enabled 状态
+const observerCallback = (mutations) => {
+    if (!enabled) return;
     for (const mutation of mutations) {
         if (mutation.addedNodes.length) {
             for (const node of mutation.addedNodes) {
@@ -187,10 +240,22 @@ const observer = new MutationObserver((mutations) => {
             }
         }
     }
-});
+};
 
-// Start observing the body
-observer.observe(document.body, { childList: true, subtree: true });
+// 启动 observer
+function startObserver() {
+    if (observer) observer.disconnect();
+    observer = new MutationObserver(observerCallback);
+    observer.observe(document.body, { childList: true, subtree: true });
+}
 
-// Process existing nodes on initial load
-document.querySelectorAll('[data-testid="tweetText"]').forEach(processTweet);
+// 页面加载完成后，初始化状态、启动 observer 并处理现有节点
+async function main() {
+    await initState();
+    startObserver();
+    if (enabled) {
+        document.querySelectorAll('[data-testid="tweetText"]').forEach(processTweet);
+    }
+}
+
+main();
